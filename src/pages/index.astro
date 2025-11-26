@@ -1,0 +1,55 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import Card from '../components/Card.astro'
+import Tag from '../components/Tag.astro'
+const posts = Object.values(import.meta.glob('./blog/posts/*.md', {eager: true}))
+
+posts.sort((b:any,a:any) =>
+		a.frontmatter.pubDate.localeCompare(b.frontmatter.pubDate) ||
+		b.frontmatter.pubDate.localeCompare(a.frontmatter.pubDate)
+)
+const newPosts = posts.map((post:any) => post)
+newPosts.length = 3
+
+const featurePosts = posts.filter((post:any)=>post.frontmatter.feature === true)
+// featurePosts.length 
+// if(featurePosts.length < 3){
+//     featurePosts.length = featurePosts.length
+// }else{
+//     featurePosts.length = 3
+// }
+//三元運算子
+featurePosts.length < 3 ? featurePosts.length : 3
+
+// featurePosts.length ?? 3
+
+const uniqueTags = [...new Set(posts.map((post:any) =>post.frontmatter.tags).flat())]
+---
+<BaseLayout>
+	
+	<header class="aspect-[2/1] mb-12">
+		<img src="/images/cat.jpg" alt="" class="rounded-4xl w-full h-full object-cover">
+	</header>
+	<section class="flex gap-2 justify-center mb-6">
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+
+		{
+			uniqueTags.map((tag:any) => <Tag tag={tag} />)
+		}
+
+	</section>
+	<h2 class="text-center text-4xl font-bold mb-6">最新文章</h2>
+	<section class="grid grid-cols-3 gap-8 mb-12">
+		{
+			newPosts.map((post:any) => <Card post={post.frontmatter} url={post.url} />)
+		}
+	</section>
+	<h2 class="text-center text-4xl font-bold mb-6">推薦文章</h2>
+	<section class="grid grid-cols-3 gap-8">
+		{
+			featurePosts.map((post:any) => <Card post={post.frontmatter} url={post.url} />)
+		}
+	</section>
+</BaseLayout>

@@ -1,0 +1,51 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro"
+import Card from "../../components/Card.astro"
+
+export function getStaticPaths(){
+	const posts = Object.values(import.meta.glob('../blog/posts/*.md', {eager: true}))
+	const uniqueTags = [...new Set(posts.map((post:any) =>post.frontmatter.tags).flat())]
+    
+	return uniqueTags.map((tag:any) => {
+        const filterPosts = posts.filter((post:any)=>post.frontmatter.tags.includes(tag))
+        return {
+            params: {
+                tag: tag
+            },
+            props: {
+                posts: filterPosts
+            }
+        }
+    })
+}
+
+
+
+    //return [
+    //{
+    //params: {
+    //tag: 'AI'
+    //}
+    //},{
+    //params: {
+    //tag: '動動'
+    //}
+    //},{
+    //params: {
+    //tag: '好棒棒'
+    //}
+    //}
+    //]
+    //}
+
+const {tag} = Astro.params
+const {posts} = Astro.props
+---
+<BaseLayout>
+    <div class="text-center text-4xl font-bold mb-6">標籤為<span class="text-red-400">{tag}</span>的文章</div>
+    <section class="'grid frid-cols-3 gap-8 mb-12">
+        {
+            posts.map((post:any) => <Card post={post.frontmatter} url={post.url}/>)
+        }
+    </section>
+</BaseLayout>    

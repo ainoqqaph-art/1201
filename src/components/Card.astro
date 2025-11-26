@@ -1,0 +1,15 @@
+--- 
+const {post, url} = Astro.props
+
+
+---
+
+<div>
+	<div class="aspect-video">
+		<img src={`/images/${post.hero.src}`} alt="" class="rounded-xl w-full h-full object-cover">
+	</div>
+	<h3 class="font-bold text-lg">{post.title.slice(0,25)}...</h3>
+	<div class="text-sm text-slate-400">{post.pubDate.slice(0,10)}</div>
+	<div class="text-sm text-slate-400">{post.author}</div>
+	<a href={url} class="inline-block text-sm px-6 py-2 bg-yellow-300 text-slate-900 rounded-lg">繼續閱讀</a>
+</div>

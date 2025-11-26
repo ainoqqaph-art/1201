@@ -1,0 +1,32 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Card from "../../components/Card.astro";
+import Tag from "../../components/Tag.astro";
+const posts = Object.values(import.meta.glob('./posts/*.md', {eager: true}))
+posts.sort((b:any,a:any) =>
+	a.frontmatter.pubDate.localeCompare(b.frontmatter.pubDate) ||
+	b.frontmatter.pubDate.localeCompare(a.frontmatter.pubDate)
+)
+//const featurePosts = posts.filter((post:any)=>post.frontmatter.feature === true)
+const uniqueTags = [...new Set(posts.map((post:any) =>post.frontmatter.tags).flat())]
+
+---
+<BaseLayout>
+	<section class="flex gap-2 justify-center mb-6">
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+		<!--a href="#" class="bg-amber-300 text-xs rounded-xl px-3 -1">運動</a>-->
+
+		{
+			uniqueTags.map((tag:any) => <Tag tag={tag}/>)
+		}
+
+	</section>
+
+    <section class="grid grid-cols-3 gap-8 mb-12">
+		{
+			posts.map((post:any) => <Card post={post.frontmatter} url={post.url}/>)
+}
+	</section>
+
+</BaseLayout>
