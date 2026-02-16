@@ -25,7 +25,7 @@ import logging
 # ==================== 設定區 ====================
 SQL_SERVER = 'localhost'
 SQL_DATABASE = 'MicrosoftRDB'
-DRIVER_PATH = r"C:\自動化\msedgedriver.exe"
+DRIVER_PATH = r"C:\automation\msedgedriver.exe"  # 使用 ASCII 路徑避免編碼問題
 
 # Google Trends URL（可改地區或排序）
 TRENDS_URL = "https://trends.google.com.tw/trending?geo=US&status=active&sort=search-volume"
@@ -50,8 +50,10 @@ MAX_RETRIES = 3
 INITIAL_BACKOFF = 2  # 秒
 
 # 若 Rewards 需要已登入 session，可啟用 Edge profile（選用）
-EDGE_USER_DATA_DIR = None  # r"C:\Users\<YourUser>\AppData\Local\Microsoft\Edge\User Data"
-EDGE_PROFILE = None  # "Default"
+# 範例路徑：r"C:\Users\{USERNAME}\AppData\Local\Microsoft\Edge\User Data"
+# 其中 {USERNAME} 是您的 Windows 使用者名稱
+EDGE_USER_DATA_DIR = None  # r"C:\Users\YourUsername\AppData\Local\Microsoft\Edge\User Data"
+EDGE_PROFILE = None  # "Default" 或 "Profile 1" 等
 
 # Microsoft Rewards URL
 REWARDS_URL = "https://rewards.microsoft.com/"
@@ -88,40 +90,91 @@ def get_db_connection():
         raise
 
 
-def save_keyword_to_db(conn, keyword, rank, search_volume=None):
+def get_or_create_keyword_id(conn, keyword, category=None, search_intent=None):
     """
-    將關鍵字儲存到資料庫
+    取得或建立關鍵字 ID
+    如果關鍵字已存在於 KeywordsMaster，返回其 ID
+    如果不存在，插入新記錄並返回新 ID
     """
     try:
         cursor = conn.cursor()
-        query = """
-            INSERT INTO TrendingKeywords (Keyword, Rank, SearchVolume, FetchedAt)
-            VALUES (?, ?, ?, GETDATE())
-        """
-        cursor.execute(query, (keyword, rank, search_volume))
+        
+        # 先查詢是否已存在
+        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ?", (keyword,))
+        row = cursor.fetchone()
+        
+        if row:
+            keyword_id = row[0]
+            logger.debug(f"關鍵字已存在: {keyword} (ID: {keyword_id})")
+            return keyword_id
+        
+        # 不存在則插入（觸發器會自動處理 KeywordID）
+        cursor.execute("""
+            INSERT INTO KeywordsMaster (KeywordID, Keyword, Category, SearchIntent, CreatedAt)
+            VALUES (0, ?, ?, ?, GETDATE())
+        """, (keyword, category, search_intent))
         conn.commit()
-        logger.info(f"關鍵字已儲存: {keyword} (排名: {rank})")
+        
+        # 重新查詢以取得觸發器生成的 ID
+        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ?", (keyword,))
+        row = cursor.fetchone()
+        keyword_id = row[0]
+        
+        logger.info(f"新增關鍵字: {keyword} (ID: {keyword_id})")
+        return keyword_id
+        
     except Exception as e:
-        logger.error(f"儲存關鍵字失敗: {e}")
+        logger.error(f"處理關鍵字失敗: {e}")
         conn.rollback()
+        raise
 
 
-def save_daily_points(conn, points, activity_type='搜尋'):
+def save_keyword_log(conn, keyword_id, log_date, summary_text=None, status='Success', 
+                     screenshot_path=None, error_message=None):
+    """
+    將關鍵字搜尋記錄寫入 KeywordsLog
+    """
+    try:
+        cursor = conn.cursor()
+        
+        # 插入記錄（觸發器會自動處理 LogID）
+        cursor.execute("""
+            INSERT INTO KeywordsLog 
+            (LogID, KeywordID, LogDate, CrawlTime, SummaryText, Status, ScreenshotPath, ErrorMessage, CreatedAt)
+            VALUES (0, ?, ?, GETDATE(), ?, ?, ?, ?, GETDATE())
+        """, (keyword_id, log_date, summary_text, status, screenshot_path, error_message))
+        
+        conn.commit()
+        logger.info(f"已記錄關鍵字搜尋: KeywordID={keyword_id}, Status={status}")
+        
+    except Exception as e:
+        logger.error(f"儲存關鍵字記錄失敗: {e}")
+        conn.rollback()
+        raise
+
+
+def save_daily_points(conn, log_date, available_points=None, today_points=None, 
+                     points_gained=None, status='Success', error_message=None):
     """
     將當日點數寫入 DailyPointsLog
     """
     try:
         cursor = conn.cursor()
-        query = """
-            INSERT INTO DailyPointsLog (Points, ActivityType, LoggedAt)
-            VALUES (?, ?, GETDATE())
-        """
-        cursor.execute(query, (points, activity_type))
+        
+        # 插入記錄（觸發器會自動處理 LogID）
+        cursor.execute("""
+            INSERT INTO DailyPointsLog 
+            (LogID, LogDate, AvailablePoints, TodayPoints, PointsGained, Status, ErrorMessage, CreatedAt)
+            VALUES (0, ?, ?, ?, ?, ?, ?, GETDATE())
+        """, (log_date, available_points, today_points, points_gained, status, error_message))
+        
         conn.commit()
-        logger.info(f"已記錄點數: {points} ({activity_type})")
+        logger.info(f"已記錄點數: LogDate={log_date}, Available={available_points}, Today={today_points}, Gained={points_gained}")
+        
     except Exception as e:
-        logger.error(f"儲存點數失敗: {e}")
+        logger.error(f"儲存點數記錄失敗: {e}")
         conn.rollback()
+        raise
 
 
 # ==================== Selenium 操作 ====================
@@ -249,17 +302,28 @@ def search_bing_keyword(driver, keyword):
         
         logger.info(f"已完成搜尋: {keyword}")
         
-        # 可選：擷取搜尋結果摘要
+        # 擷取搜尋結果摘要
+        summary_text = None
         try:
             results = driver.find_elements(By.CSS_SELECTOR, "li.b_algo")
             if results:
-                first_result = results[0].text[:200]  # 取前 200 字元
-                logger.info(f"搜尋結果摘要: {first_result}...")
-                return first_result
+                # 收集前 3 個結果的摘要
+                summaries = []
+                for i, result in enumerate(results[:3], 1):
+                    try:
+                        title = result.find_element(By.CSS_SELECTOR, "h2").text
+                        desc = result.find_element(By.CSS_SELECTOR, "p, .b_caption p").text
+                        summaries.append(f"[{i}] {title}: {desc[:100]}...")
+                    except:
+                        continue
+                
+                if summaries:
+                    summary_text = "\n".join(summaries)
+                    logger.info(f"擷取到 {len(summaries)} 個搜尋結果")
         except Exception as e:
             logger.warning(f"擷取摘要失敗: {e}")
         
-        return None
+        return summary_text
         
     except Exception as e:
         logger.error(f"Bing 搜尋失敗 ({keyword}): {e}")
@@ -268,45 +332,76 @@ def search_bing_keyword(driver, keyword):
 
 def fetch_rewards_points(driver):
     """
-    抓取 Microsoft Rewards 當日點數
+    抓取 Microsoft Rewards 點數
+    返回: dict {'available_points': int, 'today_points': int, 'points_gained': int}
     """
     try:
         logger.info("正在抓取 Microsoft Rewards 點數...")
         driver.get(REWARDS_URL)
         
-        # 等待點數元素載入（實際 selector 需根據頁面調整）
+        # 等待頁面載入
         wait = WebDriverWait(driver, 20)
+        time.sleep(3)  # 額外等待確保頁面完全載入
         
-        # Microsoft Rewards 頁面的點數顯示位置可能變化
-        # 這裡提供幾種可能的 selector
-        points = None
-        selectors = [
+        result = {
+            'available_points': None,
+            'today_points': None,
+            'points_gained': None
+        }
+        
+        # 嘗試抓取可用點數 (Available Points)
+        available_selectors = [
             "span.mee-rewards-counter-balance",
             "div.dashboard-balance span",
             "[data-bi-id='rewardsBalance']",
-            "span.points-value"
+            "span.points-value",
+            "mee-rewards-user-status-balance span"
         ]
         
-        for selector in selectors:
+        for selector in available_selectors:
             try:
-                points_element = wait.until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                points_text = points_element.text.strip()
-                # 提取數字
-                points = int(''.join(filter(str.isdigit, points_text)))
-                logger.info(f"目前點數: {points}")
-                return points
-            except Exception as e:
+                element = driver.find_element(By.CSS_SELECTOR, selector)
+                text = element.text.strip()
+                points = int(''.join(filter(str.isdigit, text)))
+                result['available_points'] = points
+                logger.info(f"可用點數: {points}")
+                break
+            except:
                 continue
         
-        if points is None:
+        # 嘗試抓取今日點數 (Today's Points)
+        # 這部分的 selector 可能需要根據實際頁面調整
+        today_selectors = [
+            "span.daily-points",
+            "div.today-points span",
+            "[data-bi-id='todayPoints']",
+            "mee-rewards-daily-set-item-content"
+        ]
+        
+        for selector in today_selectors:
+            try:
+                element = driver.find_element(By.CSS_SELECTOR, selector)
+                text = element.text.strip()
+                points = int(''.join(filter(str.isdigit, text)))
+                result['today_points'] = points
+                result['points_gained'] = points  # 通常今日點數等於獲得點數
+                logger.info(f"今日點數: {points}")
+                break
+            except:
+                continue
+        
+        if result['available_points'] is None:
             logger.warning("無法取得點數，可能需要登入或調整 selector")
-            return 0
+        
+        return result
             
     except Exception as e:
         logger.error(f"抓取 Rewards 點數失敗: {e}")
-        return 0
+        return {
+            'available_points': None,
+            'today_points': None,
+            'points_gained': None
+        }
 
 
 # ==================== 主流程 ====================
@@ -323,6 +418,7 @@ def main():
     
     driver = None
     conn = None
+    log_date = datetime.now().date()
     
     try:
         # 建立資料庫連線
@@ -338,10 +434,21 @@ def main():
             logger.info("=== 步驟 1: 抓取 Google Trends 熱門關鍵字 ===")
             keywords = fetch_google_trends(driver)
             
-            # 儲存關鍵字到資料庫
+            # 儲存關鍵字到資料庫 (KeywordsMaster)
             if not args.dry_run and conn:
                 for kw in keywords:
-                    save_keyword_to_db(conn, kw['keyword'], kw['rank'])
+                    try:
+                        # 建立或取得 KeywordID，設定 Category 為 'Google Trends'
+                        keyword_id = get_or_create_keyword_id(
+                            conn, 
+                            kw['keyword'], 
+                            category='Google Trends',
+                            search_intent='Trending'
+                        )
+                        # 儲存一筆初始記錄到 KeywordsLog (尚未搜尋)
+                        # 這可以選擇性做，或在後續搜尋時才記錄
+                    except Exception as e:
+                        logger.error(f"處理關鍵字 '{kw['keyword']}' 時發生錯誤: {e}")
         else:
             logger.info("跳過 Google Trends 抓取")
         
@@ -351,9 +458,55 @@ def main():
             
             for idx, kw_data in enumerate(keywords, 1):
                 keyword = kw_data['keyword']
+                summary_text = None
+                status = 'Success'
+                error_message = None
                 
-                # 搜尋關鍵字
-                search_bing_keyword(driver, keyword)
+                try:
+                    # 搜尋關鍵字並取得摘要
+                    summary_text = search_bing_keyword(driver, keyword)
+                    
+                    # 儲存搜尋記錄到 KeywordsLog
+                    if not args.dry_run and conn:
+                        keyword_id = get_or_create_keyword_id(
+                            conn, 
+                            keyword, 
+                            category='Google Trends',
+                            search_intent='Trending'
+                        )
+                        save_keyword_log(
+                            conn,
+                            keyword_id=keyword_id,
+                            log_date=log_date,
+                            summary_text=summary_text,
+                            status=status,
+                            error_message=None
+                        )
+                    
+                except Exception as e:
+                    status = 'Fail'
+                    error_message = str(e)
+                    logger.error(f"搜尋關鍵字 '{keyword}' 失敗: {e}")
+                    
+                    # 即使失敗也記錄到資料庫
+                    if not args.dry_run and conn:
+                        try:
+                            keyword_id = get_or_create_keyword_id(
+                                conn, 
+                                keyword, 
+                                category='Google Trends',
+                                search_intent='Trending'
+                            )
+                            save_keyword_log(
+                                conn,
+                                keyword_id=keyword_id,
+                                log_date=log_date,
+                                summary_text=None,
+                                status=status,
+                                error_message=error_message
+                            )
+                        except Exception as db_error:
+                            logger.error(f"記錄失敗狀態時發生錯誤: {db_error}")
                 
                 # 每個關鍵字後的休息時間
                 if idx < len(keywords):
@@ -374,11 +527,22 @@ def main():
         # Step 3: 抓取 Microsoft Rewards 點數
         if not args.skip_rewards:
             logger.info("\n=== 步驟 3: 抓取 Microsoft Rewards 點數 ===")
-            points = fetch_rewards_points(driver)
+            points_data = fetch_rewards_points(driver)
             
             # 儲存點數到資料庫
-            if not args.dry_run and conn and points > 0:
-                save_daily_points(conn, points)
+            if not args.dry_run and conn:
+                status = 'Success' if points_data['available_points'] is not None else 'Fail'
+                error_msg = None if status == 'Success' else '無法取得點數'
+                
+                save_daily_points(
+                    conn,
+                    log_date=log_date,
+                    available_points=points_data['available_points'],
+                    today_points=points_data['today_points'],
+                    points_gained=points_data['points_gained'],
+                    status=status,
+                    error_message=error_msg
+                )
         else:
             logger.info("跳過 Rewards 點數抓取")
         
@@ -386,6 +550,21 @@ def main():
         
     except Exception as e:
         logger.error(f"執行過程發生錯誤: {e}", exc_info=True)
+        
+        # 記錄失敗到 DailyPointsLog
+        if not args.dry_run and conn:
+            try:
+                save_daily_points(
+                    conn,
+                    log_date=log_date,
+                    available_points=None,
+                    today_points=None,
+                    points_gained=None,
+                    status='Fail',
+                    error_message=str(e)
+                )
+            except:
+                pass
         
     finally:
         # 清理資源

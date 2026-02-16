@@ -42,44 +42,46 @@ pip install -r requirements.txt
 2. 下載對應版本的 WebDriver：
    - 訪問 https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
    - 下載與您的 Edge 版本相符的 WebDriver
-   - 解壓縮並將 `msedgedriver.exe` 放置於 `C:\自動化\` 目錄
+   - 解壓縮並將 `msedgedriver.exe` 放置於 `C:\automation\` 目錄（建議使用 ASCII 路徑避免編碼問題）
 
 ### 2. 設定資料庫
 
-執行以下 SQL 腳本建立所需的資料表：
+腳本使用以下三個資料表（應該已在資料庫中建立）：
 
-```sql
--- 建立資料庫（如果不存在）
-CREATE DATABASE MicrosoftRDB;
-GO
+#### KeywordsMaster
+儲存所有爬到的關鍵字（主檔）
+- `KeywordID` (INT, PRIMARY KEY) - 由觸發器自動管理
+- `Keyword` (NVARCHAR(200), UNIQUE) - 關鍵字文字
+- `Category` (NVARCHAR(50)) - 分類（例如：'Google Trends'）
+- `SearchIntent` (NVARCHAR(50)) - 搜尋意圖（例如：'Trending'）
+- `CreatedAt` (DATETIME) - 建立時間
 
-USE MicrosoftRDB;
-GO
+#### KeywordsLog
+儲存每次對關鍵字的搜尋記錄
+- `LogID` (INT, PRIMARY KEY) - 由觸發器自動管理
+- `KeywordID` (INT, NOT NULL) - 關鍵字 ID（外鍵）
+- `LogDate` (DATE) - 記錄日期
+- `CrawlTime` (DATETIME) - 爬取時間
+- `SummaryText` (NVARCHAR(MAX)) - 搜尋結果摘要
+- `Status` (NVARCHAR(50)) - 狀態（'Success' 或 'Fail'）
+- `ScreenshotPath` (NVARCHAR(500)) - 截圖路徑（選用）
+- `ErrorMessage` (NVARCHAR(1000)) - 錯誤訊息
+- `CreatedAt` (DATETIME) - 建立時間
 
--- 建立 TrendingKeywords 資料表
-CREATE TABLE TrendingKeywords (
-    ID INT IDENTITY(1,1) PRIMARY KEY,
-    Keyword NVARCHAR(500) NOT NULL,
-    Rank INT NOT NULL,
-    SearchVolume NVARCHAR(100),
-    FetchedAt DATETIME NOT NULL
-);
-GO
+#### DailyPointsLog
+儲存每日的 Microsoft Rewards 點數記錄
+- `LogID` (INT, PRIMARY KEY) - 由觸發器自動管理
+- `LogDate` (DATE) - 記錄日期
+- `AvailablePoints` (INT) - 可用點數
+- `TodayPoints` (INT) - 今日點數
+- `PointsGained` (INT) - 今日獲得點數
+- `Status` (NVARCHAR(50)) - 狀態（'Success' 或 'Fail'）
+- `ErrorMessage` (NVARCHAR(1000)) - 錯誤訊息
+- `CreatedAt` (DATETIME) - 建立時間
 
--- 建立 DailyPointsLog 資料表
-CREATE TABLE DailyPointsLog (
-    ID INT IDENTITY(1,1) PRIMARY KEY,
-    Points INT NOT NULL,
-    ActivityType NVARCHAR(100) NOT NULL,
-    LoggedAt DATETIME NOT NULL
-);
-GO
+參考 `setup_database.sql` 檔案查看完整的資料表結構和觸發器定義。
 
--- 建立索引以提升查詢效能
-CREATE INDEX IX_TrendingKeywords_FetchedAt ON TrendingKeywords(FetchedAt);
-CREATE INDEX IX_DailyPointsLog_LoggedAt ON DailyPointsLog(LoggedAt);
-GO
-```
+**注意**：這些表使用 INSTEAD OF INSERT 觸發器來自動管理主鍵 ID，Python 腳本在插入時使用 0 作為 ID 佔位值。
 
 ### 3. 安裝 Python 套件
 

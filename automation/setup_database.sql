@@ -1,209 +1,205 @@
 -- ==========================================
--- Microsoft Rewards Automation - Database Setup Script
+-- Microsoft Rewards Automation - Database Schema Reference
 -- ==========================================
--- 此腳本用於建立所需的資料庫與資料表
-
--- 建立資料庫（如果不存在）
-IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'MicrosoftRDB')
-BEGIN
-    CREATE DATABASE MicrosoftRDB;
-    PRINT 'Database MicrosoftRDB created successfully.';
-END
-ELSE
-BEGIN
-    PRINT 'Database MicrosoftRDB already exists.';
-END
-GO
-
-USE MicrosoftRDB;
-GO
+-- 此檔案記錄所需的資料庫結構（供參考）
+-- 使用者應該已經在資料庫中建立這些表和觸發器
 
 -- ==========================================
--- 建立 TrendingKeywords 資料表
--- 用於儲存從 Google Trends 抓取的熱門關鍵字
--- ==========================================
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[TrendingKeywords]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [dbo].[TrendingKeywords] (
-        [ID] INT IDENTITY(1,1) PRIMARY KEY,
-        [Keyword] NVARCHAR(500) NOT NULL,
-        [Rank] INT NOT NULL,
-        [SearchVolume] NVARCHAR(100) NULL,
-        [FetchedAt] DATETIME NOT NULL DEFAULT GETDATE(),
-        CONSTRAINT [CHK_TrendingKeywords_Rank] CHECK ([Rank] > 0)
-    );
-    
-    PRINT 'Table TrendingKeywords created successfully.';
-END
-ELSE
-BEGIN
-    PRINT 'Table TrendingKeywords already exists.';
-END
-GO
-
--- ==========================================
--- 建立 DailyPointsLog 資料表
--- 用於記錄每日的 Microsoft Rewards 點數
--- ==========================================
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DailyPointsLog]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [dbo].[DailyPointsLog] (
-        [ID] INT IDENTITY(1,1) PRIMARY KEY,
-        [Points] INT NOT NULL,
-        [ActivityType] NVARCHAR(100) NOT NULL DEFAULT '搜尋',
-        [LoggedAt] DATETIME NOT NULL DEFAULT GETDATE(),
-        CONSTRAINT [CHK_DailyPointsLog_Points] CHECK ([Points] >= 0)
-    );
-    
-    PRINT 'Table DailyPointsLog created successfully.';
-END
-ELSE
-BEGIN
-    PRINT 'Table DailyPointsLog already exists.';
-END
-GO
-
--- ==========================================
--- 建立索引以提升查詢效能
+-- 資料表說明
 -- ==========================================
 
--- TrendingKeywords 索引
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TrendingKeywords_FetchedAt' AND object_id = OBJECT_ID('TrendingKeywords'))
-BEGIN
-    CREATE INDEX IX_TrendingKeywords_FetchedAt ON [dbo].[TrendingKeywords]([FetchedAt] DESC);
-    PRINT 'Index IX_TrendingKeywords_FetchedAt created successfully.';
-END
+-- ==================== KeywordsMaster ====================
+-- 儲存所有爬到的關鍵字（一次性）
+-- 說明：此表儲存唯一的關鍵字主檔，KeywordID 由觸發器自動管理
+/*
+CREATE TABLE KeywordsMaster (
+  KeywordID INT PRIMARY KEY,  -- Python 管理，無 IDENTITY
+  Keyword NVARCHAR(200) NOT NULL UNIQUE,
+  Category NVARCHAR(50),
+  SearchIntent NVARCHAR(50),
+  CreatedAt DATETIME DEFAULT GETDATE()
+);
+*/
 
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TrendingKeywords_Keyword' AND object_id = OBJECT_ID('TrendingKeywords'))
-BEGIN
-    CREATE INDEX IX_TrendingKeywords_Keyword ON [dbo].[TrendingKeywords]([Keyword]);
-    PRINT 'Index IX_TrendingKeywords_Keyword created successfully.';
-END
+-- ==================== KeywordsLog ====================
+-- 儲存每次對關鍵字的搜尋記錄
+-- 說明：記錄每次搜尋的詳細資訊，包含摘要、狀態、錯誤訊息等
+/*
+CREATE TABLE KeywordsLog (
+  LogID INT PRIMARY KEY,  -- Python 管理，無 IDENTITY
+  KeywordID INT NOT NULL,
+  LogDate DATE NOT NULL,
+  CrawlTime DATETIME NOT NULL,
+  SummaryText NVARCHAR(MAX),
+  Status NVARCHAR(50),  -- 'Success', 'Fail' 等
+  ScreenshotPath NVARCHAR(500),
+  ErrorMessage NVARCHAR(1000),
+  CreatedAt DATETIME DEFAULT GETDATE(),
+  CONSTRAINT FK_KeywordsLog_Master FOREIGN KEY (KeywordID) REFERENCES KeywordsMaster(KeywordID)
+);
+*/
 
--- DailyPointsLog 索引
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_DailyPointsLog_LoggedAt' AND object_id = OBJECT_ID('DailyPointsLog'))
-BEGIN
-    CREATE INDEX IX_DailyPointsLog_LoggedAt ON [dbo].[DailyPointsLog]([LoggedAt] DESC);
-    PRINT 'Index IX_DailyPointsLog_LoggedAt created successfully.';
-END
-
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_DailyPointsLog_ActivityType' AND object_id = OBJECT_ID('DailyPointsLog'))
-BEGIN
-    CREATE INDEX IX_DailyPointsLog_ActivityType ON [dbo].[DailyPointsLog]([ActivityType]);
-    PRINT 'Index IX_DailyPointsLog_ActivityType created successfully.';
-END
-GO
-
--- ==========================================
--- 建立實用的查詢視圖（選用）
--- ==========================================
-
--- 今日關鍵字視圖
-IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'vw_TodayKeywords')
-BEGIN
-    EXEC('
-    CREATE VIEW vw_TodayKeywords AS
-    SELECT 
-        ID,
-        Keyword,
-        Rank,
-        SearchVolume,
-        FetchedAt
-    FROM TrendingKeywords
-    WHERE CAST(FetchedAt AS DATE) = CAST(GETDATE() AS DATE)
-    ');
-    PRINT 'View vw_TodayKeywords created successfully.';
-END
-GO
-
--- 今日點數視圖
-IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'vw_TodayPoints')
-BEGIN
-    EXEC('
-    CREATE VIEW vw_TodayPoints AS
-    SELECT 
-        ID,
-        Points,
-        ActivityType,
-        LoggedAt
-    FROM DailyPointsLog
-    WHERE CAST(LoggedAt AS DATE) = CAST(GETDATE() AS DATE)
-    ');
-    PRINT 'View vw_TodayPoints created successfully.';
-END
-GO
+-- ==================== DailyPointsLog ====================
+-- 儲存每日的 Microsoft Rewards 點數記錄
+-- 說明：記錄可用點數、今日點數、獲得點數等資訊
+/*
+CREATE TABLE DailyPointsLog (
+  LogID INT PRIMARY KEY,  -- Python 管理，無 IDENTITY
+  LogDate DATE NOT NULL,
+  AvailablePoints INT NULL,  -- 可用點數（登入成功時填充）
+  TodayPoints INT NULL,  -- 今日點數（登入成功時填充）
+  PointsGained INT NULL,  -- 今日獲得點數（通常等於 TodayPoints）
+  Status NVARCHAR(50),  -- 'Success', 'Fail'
+  ErrorMessage NVARCHAR(1000),  -- 若失敗記錄錯誤訊息
+  CreatedAt DATETIME DEFAULT GETDATE()
+);
+*/
 
 -- ==========================================
--- 建立統計資料的預存程序（選用）
+-- 觸發器說明
 -- ==========================================
+-- 這些觸發器會自動管理主鍵 ID，Python 插入時可使用 0 作為佔位值
 
--- 取得過去 N 天的點數統計
-IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[sp_GetPointsStats]') AND type in (N'P', N'PC'))
-BEGIN
-    DROP PROCEDURE [dbo].[sp_GetPointsStats];
-END
-GO
-
-CREATE PROCEDURE [dbo].[sp_GetPointsStats]
-    @DaysBack INT = 7
+-- KeywordsMaster 觸發器
+/*
+CREATE TRIGGER trg_KeywordsMaster_Insert
+ON KeywordsMaster
+INSTEAD OF INSERT
 AS
 BEGIN
-    SET NOCOUNT ON;
+    DECLARE @MaxID INT = 0;
     
+    -- 先鎖定表並取得目前最大值
+    SELECT @MaxID = ISNULL(MAX(KeywordID), 0) FROM KeywordsMaster WITH (TABLOCKX);
+    
+    -- 插入新資料，ID 逐筆遞增
+    INSERT INTO KeywordsMaster (KeywordID, Keyword, Category, SearchIntent, CreatedAt)
     SELECT 
-        CAST(LoggedAt AS DATE) AS Date,
-        SUM(Points) AS TotalPoints,
-        COUNT(*) AS ActivityCount,
-        STRING_AGG(ActivityType, ', ') AS ActivityTypes
-    FROM DailyPointsLog
-    WHERE LoggedAt >= DATEADD(DAY, -@DaysBack, GETDATE())
-    GROUP BY CAST(LoggedAt AS DATE)
-    ORDER BY Date DESC;
-END
-GO
+        @MaxID + ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+        inserted.Keyword,
+        inserted.Category,
+        inserted.SearchIntent,
+        inserted.CreatedAt
+    FROM inserted;
+END;
+*/
 
-PRINT 'Stored procedure sp_GetPointsStats created successfully.';
-GO
-
--- 取得熱門關鍵字統計
-IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[sp_GetTrendingStats]') AND type in (N'P', N'PC'))
-BEGIN
-    DROP PROCEDURE [dbo].[sp_GetTrendingStats];
-END
-GO
-
-CREATE PROCEDURE [dbo].[sp_GetTrendingStats]
-    @DaysBack INT = 7
+-- KeywordsLog 觸發器
+/*
+CREATE TRIGGER trg_KeywordsLog_Insert
+ON KeywordsLog
+INSTEAD OF INSERT
 AS
 BEGIN
-    SET NOCOUNT ON;
+    DECLARE @MaxID INT = 0;
     
+    -- 先鎖定表並取得目前最大值
+    SELECT @MaxID = ISNULL(MAX(LogID), 0) FROM KeywordsLog WITH (TABLOCKX);
+    
+    -- 插入新資料，ID 逐筆遞增
+    INSERT INTO KeywordsLog (LogID, KeywordID, LogDate, CrawlTime, SummaryText, Status, ScreenshotPath, ErrorMessage, CreatedAt)
     SELECT 
-        Keyword,
-        COUNT(*) AS Appearances,
-        AVG(CAST(Rank AS FLOAT)) AS AvgRank,
-        MIN(Rank) AS BestRank,
-        MAX(FetchedAt) AS LastSeen
-    FROM TrendingKeywords
-    WHERE FetchedAt >= DATEADD(DAY, -@DaysBack, GETDATE())
-    GROUP BY Keyword
-    HAVING COUNT(*) > 1  -- 至少出現過 2 次
-    ORDER BY Appearances DESC, AvgRank ASC;
-END
-GO
+        @MaxID + ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+        inserted.KeywordID,
+        inserted.LogDate,
+        inserted.CrawlTime,
+        inserted.SummaryText,
+        inserted.Status,
+        inserted.ScreenshotPath,
+        inserted.ErrorMessage,
+        inserted.CreatedAt
+    FROM inserted;
+END;
+*/
 
-PRINT 'Stored procedure sp_GetTrendingStats created successfully.';
-GO
+-- DailyPointsLog 觸發器
+/*
+CREATE TRIGGER trg_DailyPointsLog_Insert
+ON DailyPointsLog
+INSTEAD OF INSERT
+AS
+BEGIN
+    DECLARE @MaxID INT = 0;
+    
+    -- 先鎖定表並取得目前最大值
+    SELECT @MaxID = ISNULL(MAX(LogID), 0) FROM DailyPointsLog WITH (TABLOCKX);
+    
+    -- 插入新資料，ID 逐筆遞增
+    INSERT INTO DailyPointsLog (LogID, LogDate, AvailablePoints, TodayPoints, PointsGained, Status, ErrorMessage, CreatedAt)
+    SELECT 
+        @MaxID + ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+        inserted.LogDate,
+        inserted.AvailablePoints,
+        inserted.TodayPoints,
+        inserted.PointsGained,
+        inserted.Status,
+        inserted.ErrorMessage,
+        inserted.CreatedAt
+    FROM inserted;
+END;
+*/
 
-PRINT '';
-PRINT '==========================================';
-PRINT 'Database setup completed successfully!';
-PRINT '==========================================';
-PRINT '';
-PRINT 'You can now run the following queries to verify:';
-PRINT '  - SELECT * FROM TrendingKeywords;';
-PRINT '  - SELECT * FROM DailyPointsLog;';
-PRINT '  - EXEC sp_GetPointsStats @DaysBack = 7;';
-PRINT '  - EXEC sp_GetTrendingStats @DaysBack = 7;';
-PRINT '';
-GO
+-- ==========================================
+-- 實用查詢範例
+-- ==========================================
+
+-- 查詢今日所有關鍵字搜尋記錄
+/*
+SELECT 
+    km.Keyword,
+    kl.LogDate,
+    kl.CrawlTime,
+    kl.Status,
+    LEFT(kl.SummaryText, 100) AS Summary,
+    kl.ErrorMessage
+FROM KeywordsLog kl
+INNER JOIN KeywordsMaster km ON kl.KeywordID = km.KeywordID
+WHERE kl.LogDate = CAST(GETDATE() AS DATE)
+ORDER BY kl.CrawlTime DESC;
+*/
+
+-- 查詢今日點數記錄
+/*
+SELECT 
+    LogDate,
+    AvailablePoints,
+    TodayPoints,
+    PointsGained,
+    Status,
+    ErrorMessage,
+    CreatedAt
+FROM DailyPointsLog
+WHERE LogDate = CAST(GETDATE() AS DATE)
+ORDER BY CreatedAt DESC;
+*/
+
+-- 查詢過去 7 天的點數趨勢
+/*
+SELECT 
+    LogDate,
+    SUM(PointsGained) AS TotalGained,
+    MAX(AvailablePoints) AS MaxAvailable,
+    COUNT(CASE WHEN Status = 'Success' THEN 1 END) AS SuccessCount,
+    COUNT(CASE WHEN Status = 'Fail' THEN 1 END) AS FailCount
+FROM DailyPointsLog
+WHERE LogDate >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
+GROUP BY LogDate
+ORDER BY LogDate DESC;
+*/
+
+-- 查詢最常出現的關鍵字
+/*
+SELECT TOP 10
+    km.Keyword,
+    COUNT(*) AS SearchCount,
+    SUM(CASE WHEN kl.Status = 'Success' THEN 1 ELSE 0 END) AS SuccessCount,
+    MAX(kl.LogDate) AS LastSearchDate
+FROM KeywordsLog kl
+INNER JOIN KeywordsMaster km ON kl.KeywordID = km.KeywordID
+GROUP BY km.Keyword
+ORDER BY SearchCount DESC;
+*/
+
+PRINT '資料庫結構參考檔案';
+PRINT '請確認您的資料庫已包含上述表格和觸發器';
+

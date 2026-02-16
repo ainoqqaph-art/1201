@@ -6,7 +6,7 @@ SQL_SERVER = 'localhost'  # SQL Server 位址，例如：'localhost' 或 '192.16
 SQL_DATABASE = 'MicrosoftRDB'  # 資料庫名稱
 
 # ==================== WebDriver 設定 ====================
-DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # Edge WebDriver 的完整路徑
+DRIVER_PATH = r"C:\automation\msedgedriver.exe"  # Edge WebDriver 的完整路徑（建議使用 ASCII 路徑）
 
 # ==================== Google Trends 設定 ====================
 # 可以根據需要調整地區和排序方式
