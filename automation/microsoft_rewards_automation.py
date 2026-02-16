@@ -25,7 +25,7 @@ import logging
 # ==================== 設定區 ====================
 SQL_SERVER = 'localhost'
 SQL_DATABASE = 'MicrosoftRDB'
-DRIVER_PATH = r"C:\automation\msedgedriver.exe"  # 使用 ASCII 路徑避免編碼問題
+DRIVER_PATH = r"C:\自動化\msedgedriver.exe"
 
 # Google Trends URL（可改地區或排序）
 TRENDS_URL = "https://trends.google.com.tw/trending?geo=US&status=active&sort=search-volume"

@@ -86,11 +86,11 @@ python microsoft_rewards_automation.py --skip-trends --skip-search
 
 4. **設定動作**
    - 動作：啟動程式
-   - 程式或指令碼：`C:\automation\run_automation.bat`
+   - 程式或指令碼：`C:\自動化\run_automation.bat`
    - 或使用 Python 直接執行：
      - 程式：`C:\Python3\python.exe`
-     - 引數：`"C:\automation\microsoft_rewards_automation.py"`
-     - 開始位置：`C:\automation\`
+     - 引數：`"C:\自動化\microsoft_rewards_automation.py"`
+     - 開始位置：`C:\自動化\`
 
 5. **進階設定**
    - ✓ 以最高權限執行
@@ -210,7 +210,7 @@ python -c "import pyodbc; print(pyodbc.drivers())"
 **解決方案**：
 1. 檢查 Edge 版本：`edge://settings/help`
 2. 下載對應版本的 msedgedriver.exe
-3. 替換 `C:\automation\msedgedriver.exe`
+3. 替換 `C:\自動化\msedgedriver.exe`
 
 ### 問題：無法抓取點數
 **解決方案**：

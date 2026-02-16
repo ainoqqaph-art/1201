@@ -42,7 +42,7 @@ pip install -r requirements.txt
 2. 下載對應版本的 WebDriver：
    - 訪問 https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
    - 下載與您的 Edge 版本相符的 WebDriver
-   - 解壓縮並將 `msedgedriver.exe` 放置於 `C:\automation\` 目錄（建議使用 ASCII 路徑避免編碼問題）
+   - 解壓縮並將 `msedgedriver.exe` 放置於 `C:\自動化\` 目錄
 
 ### 2. 設定資料庫
 
