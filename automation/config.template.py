@@ -1,4 +1,4 @@
-# Microsoft Rewards Automation - Configuration Template
+# Google Trends 自動化 - Configuration Template
 # 複製此檔案為 config.py 並根據您的環境調整設定值
 
 # ==================== SQL Server 設定 ====================
@@ -20,11 +20,11 @@ TRENDS_URLS = [
     "https://trends.google.com.tw/trending?geo=AU",   # 澳洲
 ]
 
-# 每個地區抓取的關鍵字數量
-KEYWORDS_PER_REGION = 5
+# 每個地區抓取的關鍵字數量（改為 20）
+KEYWORDS_PER_REGION = 20
 
 # 從所有地區總共選取前 N 名進行搜尋
-TOP_N = 5
+TOP_N = 20
 
 # ==================== 搜尋間隔設定（秒） ====================
 # 每個關鍵字搜尋之間的間隔（隨機）

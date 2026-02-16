@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 """
-整合流程（單次執行版）：
-1) 抓取 Google Trends 熱門關鍵字（一次）
-2) 針對當次抓到的前五個關鍵字，在 Bing 做搜尋並擷取摘要（每關鍵字間隔 30-90 秒，完成後休息 2-5 分鐘）
-3) 完成後抓 Microsoft Rewards 當日點數並寫入 DailyPointsLog（一次）
-4) 使用 Windows Authentication 連接 SQL Server（請確認 ODBC Driver 與 msedgedriver 相容）
+Google Trends 關鍵字自動化抓取與搜尋（單次執行版）：
+1) 從多個地區抓取 Google Trends 熱門關鍵字（每個地區前 20 名）
+2) 針對抓取到的關鍵字在 Bing 做搜尋並擷取摘要（每關鍵字間隔 30-90 秒）
+3) 儲存關鍵字、搜尋量、排名等資訊到 SQL Server 資料庫
+4) 使用 Windows Authentication 連接 SQL Server
 說明：此檔為「單次執行」版本，適合由 Windows Task Scheduler 或其他排程工具呼叫。
 """
 
@@ -39,12 +39,12 @@ TRENDS_URLS = [
 ]
 
 # 每個地區抓取的關鍵字數量
-KEYWORDS_PER_REGION = 5
+KEYWORDS_PER_REGION = 20
 
 # 前 N 名關鍵字要做額外搜尋（從所有地區總共選取）
-TOP_N = 5
+TOP_N = 20
 
-# 前五關鍵字搜尋間隔（秒）
+# 前 20 名關鍵字搜尋間隔（秒）
 PER_KEYWORD_MIN = 30
 PER_KEYWORD_MAX = 90
 
@@ -60,21 +60,17 @@ AFTER_KEYWORD_MAX = 20
 MAX_RETRIES = 3
 INITIAL_BACKOFF = 2  # 秒
 
-# 若 Rewards 需要已登入 session，可啟用 Edge profile（選用）
-# 範例路徑：r"C:\Users\{USERNAME}\AppData\Local\Microsoft\Edge\User Data"
-# 其中 {USERNAME} 是您的 Windows 使用者名稱
+# Edge profile 設定（選用）
+# 如需使用已登入的 Edge 設定檔，可取消註解並設定路徑
 EDGE_USER_DATA_DIR = None  # r"C:\Users\YourUsername\AppData\Local\Microsoft\Edge\User Data"
 EDGE_PROFILE = None  # "Default" 或 "Profile 1" 等
-
-# Microsoft Rewards URL
-REWARDS_URL = "https://rewards.microsoft.com/"
 
 # ==================== 日誌設定 ====================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('microsoft_rewards_automation.log', encoding='utf-8'),
+        logging.FileHandler('google_trends_automation.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -101,37 +97,37 @@ def get_db_connection():
         raise
 
 
-def get_or_create_keyword_id(conn, keyword, category=None, search_intent=None):
+def get_or_create_keyword_id(conn, keyword, category=None, search_intent=None, search_volume=None, region=None, trend_rank=None):
     """
     取得或建立關鍵字 ID
-    如果關鍵字已存在於 KeywordsMaster，返回其 ID
+    如果關鍵字已存在於 KeywordsMaster（同一關鍵字同一地區），返回其 ID
     如果不存在，插入新記錄並返回新 ID
     """
     try:
         cursor = conn.cursor()
         
-        # 先查詢是否已存在
-        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ?", (keyword,))
+        # 先查詢是否已存在（同一關鍵字同一地區）
+        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ? AND Region = ?", (keyword, region))
         row = cursor.fetchone()
         
         if row:
             keyword_id = row[0]
-            logger.debug(f"關鍵字已存在: {keyword} (ID: {keyword_id})")
+            logger.debug(f"關鍵字已存在: {keyword} ({region}) (ID: {keyword_id})")
             return keyword_id
         
         # 不存在則插入（觸發器會自動處理 KeywordID）
         cursor.execute("""
-            INSERT INTO KeywordsMaster (KeywordID, Keyword, Category, SearchIntent, CreatedAt)
-            VALUES (0, ?, ?, ?, GETDATE())
-        """, (keyword, category, search_intent))
+            INSERT INTO KeywordsMaster (KeywordID, Keyword, Category, SearchIntent, SearchVolume, Region, TrendRank, CreatedAt)
+            VALUES (0, ?, ?, ?, ?, ?, ?, GETDATE())
+        """, (keyword, category, search_intent, search_volume, region, trend_rank))
         conn.commit()
         
         # 重新查詢以取得觸發器生成的 ID
-        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ?", (keyword,))
+        cursor.execute("SELECT KeywordID FROM KeywordsMaster WHERE Keyword = ? AND Region = ?", (keyword, region))
         row = cursor.fetchone()
         keyword_id = row[0]
         
-        logger.info(f"新增關鍵字: {keyword} (ID: {keyword_id})")
+        logger.info(f"新增關鍵字: {keyword} ({region}) 排名#{trend_rank} 搜尋量:{search_volume} (ID: {keyword_id})")
         return keyword_id
         
     except Exception as e:
@@ -164,28 +160,6 @@ def save_keyword_log(conn, keyword_id, log_date, summary_text=None, status='Succ
         raise
 
 
-def save_daily_points(conn, log_date, available_points=None, today_points=None, 
-                     points_gained=None, status='Success', error_message=None):
-    """
-    將當日點數寫入 DailyPointsLog
-    """
-    try:
-        cursor = conn.cursor()
-        
-        # 插入記錄（觸發器會自動處理 LogID）
-        cursor.execute("""
-            INSERT INTO DailyPointsLog 
-            (LogID, LogDate, AvailablePoints, TodayPoints, PointsGained, Status, ErrorMessage, CreatedAt)
-            VALUES (0, ?, ?, ?, ?, ?, ?, GETDATE())
-        """, (log_date, available_points, today_points, points_gained, status, error_message))
-        
-        conn.commit()
-        logger.info(f"已記錄點數: LogDate={log_date}, Available={available_points}, Today={today_points}, Gained={points_gained}")
-        
-    except Exception as e:
-        logger.error(f"儲存點數記錄失敗: {e}")
-        conn.rollback()
-        raise
 
 
 # ==================== Selenium 操作 ====================
@@ -321,15 +295,22 @@ def fetch_trends_from_url(driver, url, region_code):
                                 if isinstance(json_data, dict) and 'default' in json_data:
                                     trending_searches = json_data.get('default', {}).get('trendingSearchesDays', [])
                                     if trending_searches:
-                                        for search in trending_searches[0].get('trendingSearches', [])[:KEYWORDS_PER_REGION]:
+                                         for search in trending_searches[0].get('trendingSearches', [])[:KEYWORDS_PER_REGION]:
                                             keyword = search.get('title', {}).get('query', '')
+                                            # 嘗試抓取搜尋量
+                                            search_volume = search.get('formattedTraffic', '') or search.get('traffic', '')
+                                            if not search_volume:
+                                                # 嘗試從其他可能的欄位取得
+                                                search_volume = search.get('shareUrl', '').split('/')[-1] if search.get('shareUrl') else ''
+                                            
                                             if keyword:
                                                 keywords.append({
                                                     'keyword': keyword, 
                                                     'rank': len(keywords) + 1,
-                                                    'region': region_code
+                                                    'region': region_code,
+                                                    'search_volume': search_volume if search_volume else 'N/A'
                                                 })
-                                                logger.info(f"發現關鍵字 ({region_code}) #{len(keywords)}: {keyword}")
+                                                logger.info(f"發現關鍵字 ({region_code}) #{len(keywords)}: {keyword} (搜尋量: {search_volume})")
                             except (json.JSONDecodeError, Exception) as json_err:
                                 logger.error(f"JSON 處理失敗: {json_err}")
                     except Exception as e3:
@@ -344,11 +325,12 @@ def fetch_trends_from_url(driver, url, region_code):
             if not trend_items:
                 raise Exception(f"所有選擇器策略都失敗，無法找到 {region_code} 的趨勢項目")
             
-            # 從找到的元素中提取關鍵字
+            # 從找到的元素中提取關鍵字和搜尋量
             for idx, item in enumerate(trend_items[:KEYWORDS_PER_REGION], 1):
                 try:
                     keyword_element = None
                     keyword = None
+                    search_volume = 'N/A'
                     
                     # 針對不同結構的選擇器
                     selectors = [
@@ -377,15 +359,43 @@ def fetch_trends_from_url(driver, url, region_code):
                         keyword = item.text.strip()
                         # 取第一行作為關鍵字
                         if '\n' in keyword:
-                            keyword = keyword.split('\n')[0].strip()
+                            lines = keyword.split('\n')
+                            keyword = lines[0].strip()
+                            # 嘗試從其他行取得搜尋量
+                            for line in lines[1:]:
+                                line = line.strip()
+                                if line and ('+' in line or 'K' in line.upper() or 'M' in line.upper() or line[0].isdigit()):
+                                    search_volume = line
+                                    break
+                    
+                    # 嘗試從同一個 item 元素中尋找搜尋量
+                    if search_volume == 'N/A':
+                        volume_selectors = [
+                            ".search-count",
+                            ".traffic-count", 
+                            "span.count",
+                            "div[class*='traffic']",
+                            "div[class*='search']",
+                            "span[class*='count']"
+                        ]
+                        for vol_selector in volume_selectors:
+                            try:
+                                vol_element = item.find_element(By.CSS_SELECTOR, vol_selector)
+                                vol_text = vol_element.text.strip()
+                                if vol_text and ('+' in vol_text or 'K' in vol_text.upper() or 'M' in vol_text.upper() or vol_text[0].isdigit()):
+                                    search_volume = vol_text
+                                    break
+                            except:
+                                continue
                     
                     if keyword and len(keyword) > 0:
                         keywords.append({
                             'keyword': keyword, 
                             'rank': idx,
-                            'region': region_code
+                            'region': region_code,
+                            'search_volume': search_volume
                         })
-                        logger.info(f"發現關鍵字 ({region_code}) #{idx}: {keyword}")
+                        logger.info(f"發現關鍵字 ({region_code}) #{idx}: {keyword} (搜尋量: {search_volume})")
                 except Exception as e:
                     logger.warning(f"抓取第 {idx} 個關鍵字失敗: {e}")
                     continue
@@ -476,90 +486,16 @@ def search_bing_keyword(driver, keyword):
         raise
 
 
-def fetch_rewards_points(driver):
-    """
-    抓取 Microsoft Rewards 點數
-    返回: dict {'available_points': int, 'today_points': int, 'points_gained': int}
-    """
-    try:
-        logger.info("正在抓取 Microsoft Rewards 點數...")
-        driver.get(REWARDS_URL)
-        
-        # 等待頁面載入
-        wait = WebDriverWait(driver, 20)
-        time.sleep(3)  # 額外等待確保頁面完全載入
-        
-        result = {
-            'available_points': None,
-            'today_points': None,
-            'points_gained': None
-        }
-        
-        # 嘗試抓取可用點數 (Available Points)
-        available_selectors = [
-            "span.mee-rewards-counter-balance",
-            "div.dashboard-balance span",
-            "[data-bi-id='rewardsBalance']",
-            "span.points-value",
-            "mee-rewards-user-status-balance span"
-        ]
-        
-        for selector in available_selectors:
-            try:
-                element = driver.find_element(By.CSS_SELECTOR, selector)
-                text = element.text.strip()
-                points = int(''.join(filter(str.isdigit, text)))
-                result['available_points'] = points
-                logger.info(f"可用點數: {points}")
-                break
-            except:
-                continue
-        
-        # 嘗試抓取今日點數 (Today's Points)
-        # 這部分的 selector 可能需要根據實際頁面調整
-        today_selectors = [
-            "span.daily-points",
-            "div.today-points span",
-            "[data-bi-id='todayPoints']",
-            "mee-rewards-daily-set-item-content"
-        ]
-        
-        for selector in today_selectors:
-            try:
-                element = driver.find_element(By.CSS_SELECTOR, selector)
-                text = element.text.strip()
-                points = int(''.join(filter(str.isdigit, text)))
-                result['today_points'] = points
-                result['points_gained'] = points  # 通常今日點數等於獲得點數
-                logger.info(f"今日點數: {points}")
-                break
-            except:
-                continue
-        
-        if result['available_points'] is None:
-            logger.warning("無法取得點數，可能需要登入或調整 selector")
-        
-        return result
-            
-    except Exception as e:
-        logger.error(f"抓取 Rewards 點數失敗: {e}")
-        return {
-            'available_points': None,
-            'today_points': None,
-            'points_gained': None
-        }
-
 
 # ==================== 主流程 ====================
 def main():
     """
     主執行流程
     """
-    parser = argparse.ArgumentParser(description='Microsoft Rewards 自動化工具（單次執行版）')
+    parser = argparse.ArgumentParser(description='Google Trends 關鍵字自動化抓取工具（單次執行版）')
     parser.add_argument('--dry-run', action='store_true', help='測試模式，不寫入資料庫')
     parser.add_argument('--skip-trends', action='store_true', help='跳過 Google Trends 抓取')
     parser.add_argument('--skip-search', action='store_true', help='跳過 Bing 搜尋')
-    parser.add_argument('--skip-rewards', action='store_true', help='跳過 Rewards 點數抓取')
     args = parser.parse_args()
     
     driver = None
@@ -584,13 +520,19 @@ def main():
             if not args.dry_run and conn:
                 for kw in keywords:
                     try:
-                        # 建立或取得 KeywordID，使用地區作為 Category
+                        # 建立或取得 KeywordID，包含地區、搜尋量、排名資訊
                         region = kw.get('region', 'Unknown')
+                        search_volume = kw.get('search_volume', 'N/A')
+                        rank = kw.get('rank', 0)
+                        
                         keyword_id = get_or_create_keyword_id(
                             conn, 
                             kw['keyword'], 
-                            category=f'Google Trends ({region})',
-                            search_intent='Trending'
+                            category=f'Google Trends',
+                            search_intent='Trending',
+                            search_volume=search_volume,
+                            region=region,
+                            trend_rank=rank
                         )
                     except Exception as e:
                         logger.error(f"處理關鍵字 '{kw['keyword']}' 時發生錯誤: {e}")
@@ -606,11 +548,13 @@ def main():
             for idx, kw_data in enumerate(keywords_to_search, 1):
                 keyword = kw_data['keyword']
                 region = kw_data.get('region', 'Unknown')
+                search_volume = kw_data.get('search_volume', 'N/A')
+                rank = kw_data.get('rank', 0)
                 summary_text = None
                 status = 'Success'
                 error_message = None
                 
-                logger.info(f"[{idx}/{len(keywords_to_search)}] 搜尋關鍵字: {keyword} (來自 {region})")
+                logger.info(f"[{idx}/{len(keywords_to_search)}] 搜尋關鍵字: {keyword} (地區:{region}, 排名:#{rank}, 搜尋量:{search_volume})")
                 
                 try:
                     # 搜尋關鍵字並取得摘要
@@ -621,8 +565,11 @@ def main():
                         keyword_id = get_or_create_keyword_id(
                             conn, 
                             keyword, 
-                            category=f'Google Trends ({region})',
-                            search_intent='Trending'
+                            category=f'Google Trends',
+                            search_intent='Trending',
+                            search_volume=search_volume,
+                            region=region,
+                            trend_rank=rank
                         )
                         save_keyword_log(
                             conn,
@@ -644,8 +591,11 @@ def main():
                             keyword_id = get_or_create_keyword_id(
                                 conn, 
                                 keyword, 
-                                category=f'Google Trends ({region})',
-                                search_intent='Trending'
+                                category=f'Google Trends',
+                                search_intent='Trending',
+                                search_volume=search_volume,
+                                region=region,
+                                trend_rank=rank
                             )
                             save_keyword_log(
                                 conn,
@@ -674,47 +624,10 @@ def main():
             else:
                 logger.warning("無關鍵字可搜尋")
         
-        # Step 3: 抓取 Microsoft Rewards 點數
-        if not args.skip_rewards:
-            logger.info("\n=== 步驟 3: 抓取 Microsoft Rewards 點數 ===")
-            points_data = fetch_rewards_points(driver)
-            
-            # 儲存點數到資料庫
-            if not args.dry_run and conn:
-                status = 'Success' if points_data['available_points'] is not None else 'Fail'
-                error_msg = None if status == 'Success' else '無法取得點數'
-                
-                save_daily_points(
-                    conn,
-                    log_date=log_date,
-                    available_points=points_data['available_points'],
-                    today_points=points_data['today_points'],
-                    points_gained=points_data['points_gained'],
-                    status=status,
-                    error_message=error_msg
-                )
-        else:
-            logger.info("跳過 Rewards 點數抓取")
-        
         logger.info("\n=== 所有步驟完成 ===")
         
     except Exception as e:
         logger.error(f"執行過程發生錯誤: {e}", exc_info=True)
-        
-        # 記錄失敗到 DailyPointsLog
-        if not args.dry_run and conn:
-            try:
-                save_daily_points(
-                    conn,
-                    log_date=log_date,
-                    available_points=None,
-                    today_points=None,
-                    points_gained=None,
-                    status='Fail',
-                    error_message=str(e)
-                )
-            except Exception as db_err:
-                logger.error(f"記錄失敗狀態時發生錯誤: {db_err}")
         
     finally:
         # 清理資源
