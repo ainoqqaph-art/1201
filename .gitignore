@@ -40,3 +40,8 @@ htmlcov/
 # Python automation logs
 automation/*.log
 *.log
+
+# Debug screenshots
+automation/*.png
+debug_*.png
+error_*.png

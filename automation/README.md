@@ -201,6 +201,10 @@ python microsoft_rewards_automation.py --skip-trends --skip-rewards
 
 - **重試機制**：Google Trends 抓取失敗時會自動重試最多 3 次
 - **指數退避**：重試間隔會逐漸增加（2秒、4秒、8秒）
+- **多重策略**：使用多種不同的選擇器策略嘗試抓取資料
+- **JSON 支援**：自動偵測並解析 JSON 格式的 Google Trends 資料
+- **備用關鍵字**：如果所有嘗試都失敗，使用預設關鍵字以確保程式繼續運行
+- **除錯截圖**：自動儲存錯誤時的螢幕截圖到 `debug_trends_*.png` 和 `error_trends_*.png`
 - **資源清理**：無論執行成功或失敗，都會正確關閉 WebDriver 和資料庫連線
 - **詳細日誌**：所有錯誤都會記錄在日誌檔案中，包含完整的堆疊追蹤
 
@@ -208,9 +212,10 @@ python microsoft_rewards_automation.py --skip-trends --skip-rewards
 
 1. **WebDriver 版本相容性**：確保 msedgedriver.exe 的版本與您的 Edge 瀏覽器版本相符
 2. **Windows Authentication**：腳本使用 Windows Authentication 連接 SQL Server，請確保執行腳本的使用者有適當的資料庫權限
-3. **網頁結構變化**：Google Trends 和 Microsoft Rewards 的網頁結構可能會改變，需要更新 CSS Selector
+3. **網頁結構變化**：Google Trends 和 Microsoft Rewards 的網頁結構可能會改變，腳本已包含多種備用策略
 4. **帳號安全**：建議使用專用的 Microsoft 帳號，避免使用主要帳號
 5. **執行頻率**：不建議過於頻繁執行，以免觸發反機器人機制
+6. **除錯檔案**：執行過程中會產生 PNG 截圖檔案，這些檔案可協助診斷問題
 
 ## 疑難排解
 
@@ -227,7 +232,9 @@ python microsoft_rewards_automation.py --skip-trends --skip-rewards
 ### 無法抓取關鍵字或點數
 - 檢查網路連線
 - 查看日誌檔案中的錯誤訊息
-- 可能需要更新 CSS Selector（網頁結構已變化）
+- 查看自動產生的截圖檔案（debug_trends_*.png, error_trends_*.png）
+- 腳本已內建多種備用策略，通常會自動切換
+- 如果所有策略都失敗，會使用預設關鍵字繼續執行
 
 ## 授權
 
