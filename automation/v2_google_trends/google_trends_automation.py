@@ -28,6 +28,11 @@ SQL_SERVER = 'localhost'
 SQL_DATABASE = 'MicrosoftRDB'
 DRIVER_PATH = r"C:\自動化\msedgedriver.exe"
 
+# Edge 瀏覽器路徑（可選，通常可自動偵測）
+# 如果自動偵測失敗，請手動設定，例如：
+# EDGE_BINARY_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+EDGE_BINARY_PATH = None  # None 表示自動偵測
+
 # Google Trends URL（多個地區）
 TRENDS_URLS = [
     "https://trends.google.com.tw/trending?geo=US",   # 美國
@@ -163,6 +168,101 @@ def save_keyword_log(conn, keyword_id, log_date, summary_text=None, status='Succ
 
 
 # ==================== Selenium 操作 ====================
+def get_edge_version():
+    """取得 Edge 瀏覽器版本"""
+    try:
+        # 常見的 Edge 安裝路徑
+        edge_paths = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ]
+        
+        for edge_path in edge_paths:
+            if os.path.exists(edge_path):
+                result = subprocess.run(
+                    [edge_path, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    version = result.stdout.strip().split()[-1]
+                    return version, edge_path
+        return None, None
+    except Exception as e:
+        logger.warning(f"無法取得 Edge 版本: {e}")
+        return None, None
+
+
+def get_driver_version():
+    """取得 msedgedriver 版本"""
+    try:
+        if not os.path.exists(DRIVER_PATH):
+            return None
+        
+        result = subprocess.run(
+            [DRIVER_PATH, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip().split()[1]
+            return version
+        return None
+    except Exception as e:
+        logger.warning(f"無法取得 msedgedriver 版本: {e}")
+        return None
+
+
+def check_driver_compatibility():
+    """檢查 Edge 和 msedgedriver 的版本兼容性"""
+    edge_version, edge_path = get_edge_version()
+    driver_version = get_driver_version()
+    
+    logger.info("=" * 60)
+    logger.info("系統環境檢查")
+    logger.info("=" * 60)
+    
+    if edge_path:
+        logger.info(f"✓ Edge 瀏覽器路徑: {edge_path}")
+    else:
+        logger.error("✗ 找不到 Edge 瀏覽器")
+        
+    if edge_version:
+        logger.info(f"✓ Edge 瀏覽器版本: {edge_version}")
+    else:
+        logger.error("✗ 無法取得 Edge 版本")
+    
+    if os.path.exists(DRIVER_PATH):
+        logger.info(f"✓ msedgedriver 路徑: {DRIVER_PATH}")
+    else:
+        logger.error(f"✗ msedgedriver 不存在: {DRIVER_PATH}")
+        
+    if driver_version:
+        logger.info(f"✓ msedgedriver 版本: {driver_version}")
+    else:
+        logger.error("✗ 無法取得 msedgedriver 版本")
+    
+    # 檢查版本兼容性
+    if edge_version and driver_version:
+        edge_major = edge_version.split('.')[0]
+        driver_major = driver_version.split('.')[0]
+        
+        if edge_major == driver_major:
+            logger.info(f"✓ 版本兼容 (主版本皆為 {edge_major})")
+        else:
+            logger.warning(f"⚠ 版本可能不兼容！")
+            logger.warning(f"  Edge 主版本: {edge_major}")
+            logger.warning(f"  Driver 主版本: {driver_major}")
+            logger.warning(f"  建議：下載與 Edge {edge_version} 相符的 msedgedriver")
+            logger.warning(f"  下載網址：https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/")
+    
+    logger.info("=" * 60)
+    
+    return edge_version, driver_version, edge_path
+
+
 def create_edge_driver():
     """
     建立 Edge WebDriver
