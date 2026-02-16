@@ -14,6 +14,8 @@ import time
 import random
 import pyodbc
 import json
+import os
+import subprocess
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -265,9 +267,33 @@ def check_driver_compatibility():
 
 def create_edge_driver():
     """
-    建立 Edge WebDriver
+    建立 Edge WebDriver（增強版，包含自動路徑偵測和詳細錯誤診斷）
     """
+    import os
+    import subprocess
+    
+    # 首先進行版本兼容性檢查
+    edge_version, driver_version, edge_path = check_driver_compatibility()
+    
     options = webdriver.EdgeOptions()
+    
+    # ★ 關鍵修復：自動設定 Edge 瀏覽器路徑
+    if EDGE_BINARY_PATH:
+        # 使用用戶指定的路徑
+        if os.path.exists(EDGE_BINARY_PATH):
+            options.binary_location = EDGE_BINARY_PATH
+            logger.info(f"使用指定的 Edge 路徑: {EDGE_BINARY_PATH}")
+        else:
+            logger.error(f"指定的 Edge 路徑不存在: {EDGE_BINARY_PATH}")
+            raise FileNotFoundError(f"Edge 瀏覽器不存在於: {EDGE_BINARY_PATH}")
+    elif edge_path:
+        # 使用自動偵測的路徑
+        options.binary_location = edge_path
+        logger.info(f"使用自動偵測的 Edge 路徑: {edge_path}")
+    else:
+        # 讓 Selenium 自動尋找（可能失敗）
+        logger.warning("未設定 Edge 路徑，Selenium 將嘗試自動尋找...")
+        logger.warning("如果啟動失敗，請在設定檔中設定 EDGE_BINARY_PATH")
     
     # 若需使用特定 profile
     if EDGE_USER_DATA_DIR and EDGE_PROFILE:
@@ -285,12 +311,19 @@ def create_edge_driver():
     options.add_argument("--disable-dev-shm-usage")  # 解決資源限制問題
     options.add_argument("--disable-extensions")  # 禁用擴充功能
     options.add_argument("--window-size=1920,1080")  # 設定視窗大小
+    options.add_argument("--disable-web-security")  # 有時可以解決某些問題
+    options.add_argument("--allow-running-insecure-content")  # 允許不安全內容
     
     # 設定頁面載入策略
     options.page_load_strategy = 'normal'  # 等待完整頁面載入
     
     try:
+        logger.info("正在啟動 Edge WebDriver...")
         service = Service(DRIVER_PATH)
+        
+        # 增加服務日誌以便診斷
+        service.log_path = "msedgedriver.log"
+        
         driver = webdriver.Edge(service=service, options=options)
         
         # 設定隱式等待
@@ -299,10 +332,43 @@ def create_edge_driver():
         # 設定頁面載入超時
         driver.set_page_load_timeout(60)
         
-        logger.info("Edge WebDriver 已啟動")
+        logger.info("✓ Edge WebDriver 已成功啟動")
         return driver
+        
     except Exception as e:
-        logger.error(f"啟動 Edge WebDriver 失敗: {e}")
+        logger.error("=" * 80)
+        logger.error("✗ 啟動 Edge WebDriver 失敗！")
+        logger.error("=" * 80)
+        logger.error(f"錯誤訊息: {e}")
+        logger.error("")
+        logger.error("可能的原因和解決方法：")
+        logger.error("")
+        
+        if "Chrome instance exited" in str(e) or "session not created" in str(e):
+            logger.error("1. msedgedriver 版本與 Edge 瀏覽器版本不匹配")
+            logger.error("   解決方法：")
+            logger.error("   - 檢查 Edge 版本與 msedgedriver 版本（上面已顯示）")
+            logger.error("   - 下載相符版本的 msedgedriver：")
+            logger.error("     https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/")
+            logger.error("")
+            logger.error("2. Edge 瀏覽器路徑設定問題")
+            logger.error("   解決方法：")
+            logger.error("   - 在設定檔中手動設定 EDGE_BINARY_PATH")
+            logger.error("   - 例如：EDGE_BINARY_PATH = r'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'")
+            logger.error("")
+        
+        logger.error("3. msedgedriver.exe 不存在或路徑錯誤")
+        logger.error(f"   當前設定路徑: {DRIVER_PATH}")
+        logger.error(f"   檔案是否存在: {os.path.exists(DRIVER_PATH) if os.path.exists(os.path.dirname(DRIVER_PATH)) else '目錄不存在'}")
+        logger.error("")
+        
+        logger.error("4. 權限問題")
+        logger.error("   解決方法：以系統管理員身分執行")
+        logger.error("")
+        
+        logger.error("詳細錯誤日誌已儲存至: msedgedriver.log")
+        logger.error("=" * 80)
+        
         raise
 
 

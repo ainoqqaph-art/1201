@@ -4,6 +4,16 @@
 
 ## ⚠️ 重大變更說明
 
+**版本 2.1** (2026-02-16)：修復 Edge WebDriver 初始化失敗問題
+
+### 最新修復 (v2.1)
+- 🔧 **修復** Edge WebDriver 啟動失敗錯誤（"session not created: Chrome instance exited"）
+- ✅ **新增** 自動偵測 Edge 瀏覽器安裝路徑
+- ✅ **新增** 版本兼容性檢查與詳細錯誤診斷
+- ✅ **新增** 手動設定 Edge 路徑選項（EDGE_BINARY_PATH）
+- ✅ **改進** 錯誤訊息，提供明確的解決方案
+- 📖 **新增** 完整的疑難排解文件（TROUBLESHOOTING.md）
+
 **版本 2.0**：本版本已移除 Microsoft Rewards 點數抓取功能，專注於 Google Trends 關鍵字收集與分析。
 
 ### 主要變更
@@ -209,8 +219,29 @@ ORDER BY 關鍵字數量 DESC;
 ## 疑難排解
 
 ### WebDriver 無法啟動
-- 確認 msedgedriver.exe 路徑正確
-- 確認 WebDriver 版本與 Edge 版本相符
+
+⚠️ **常見錯誤**: `session not created: Chrome instance exited`
+
+**原因**：msedgedriver 版本與 Edge 瀏覽器版本不匹配
+
+**解決方法**：
+
+1. **檢查版本**（腳本會自動顯示）
+   - Edge 版本與 msedgedriver 主版本號必須相同
+   - 例如：Edge 120.x ↔ msedgedriver 120.x
+
+2. **下載相符版本**
+   - 前往：https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
+   - 替換 `C:\自動化\msedgedriver.exe`
+
+3. **手動設定 Edge 路徑**（如自動偵測失敗）
+   ```python
+   EDGE_BINARY_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+   ```
+
+4. **以系統管理員身分執行**
+
+📖 **完整診斷指南**：[TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ### 資料庫連線失敗
 - 確認 SQL Server 服務正在運行
@@ -223,9 +254,13 @@ ORDER BY 關鍵字數量 DESC;
 
 ## 版本資訊
 
-- **版本**: 2.0.0
+- **版本**: 2.1.0
 - **更新日期**: 2026-02-16
-- **主要變更**: 
+- **最新修復**: 
+  - ✅ 修復 Edge WebDriver 啟動失敗問題
+  - ✅ 新增自動偵測 Edge 路徑功能
+  - ✅ 新增詳細錯誤診斷與疑難排解指南
+- **主要功能**: 
   - 移除 Microsoft Rewards 功能
   - 新增搜尋量抓取
   - 增加每地區關鍵字數量至 20 個
