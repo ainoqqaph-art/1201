@@ -1,0 +1,184 @@
+================================================================================
+                    Google Trends 自動化系統 V2.1
+                        快速參考指南
+================================================================================
+
+📦 主要檔案位置
+================================================================================
+Python 腳本:     automation/v2_google_trends/google_trends_automation.py
+SQL 建立腳本:    automation/database_setup_complete_v2.sql
+SQL 快速指南:    automation/SQL_QUICK_START.md
+疑難排解:        automation/v2_google_trends/TROUBLESHOOTING.md
+完整說明:        automation/v2_google_trends/README_v2.md
+
+================================================================================
+🚀 快速開始（3 步驟）
+================================================================================
+
+步驟 1: 建立資料庫
+------------------
+在 SQL Server Management Studio (SSMS) 中執行：
+
+    USE MicrosoftRDB;
+    GO
+    
+    -- 開啟並執行 automation/database_setup_complete_v2.sql
+
+步驟 2: 執行程式
+------------------
+    cd C:\自動化
+    python google_trends_automation.py
+
+步驟 3: 查詢結果
+------------------
+    -- 查看今日關鍵字
+    SELECT * FROM vw_TodayKeywords ORDER BY Region, TrendRank;
+    
+    -- 查看美國 Top 20
+    EXEC sp_GetTopKeywordsByRegion @Region = 'US', @TopN = 20;
+
+================================================================================
+🔧 常見問題解決
+================================================================================
+
+問題: Edge WebDriver 啟動失敗
+錯誤: session not created: Chrome instance exited
+
+解決方案:
+1. 檢查版本是否匹配（腳本會自動顯示）
+2. 下載相符版本的 msedgedriver:
+   https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
+3. 替換 C:\自動化\msedgedriver.exe
+4. 如仍失敗，設定 EDGE_BINARY_PATH（參考 TROUBLESHOOTING.md）
+
+問題: 資料庫連線失敗
+
+檢查清單:
+☐ SQL Server 服務運行中？
+☐ 資料庫名稱是 MicrosoftRDB？
+☐ ODBC Driver 17 或 18 已安裝？
+☐ Windows Authentication 有權限？
+
+================================================================================
+📊 資料庫結構
+================================================================================
+
+表 1: KeywordsMaster（關鍵字主表）
+----------------------------------
+KeywordID        INT              -- 唯一 ID
+Keyword          NVARCHAR(200)    -- 關鍵字文字
+SearchVolume     NVARCHAR(100)    -- 搜尋量（100K+, 1M+）
+Region           NVARCHAR(10)     -- 地區（US, TW, JP, GB, HK, AU）
+TrendRank        INT              -- 該地區排名（1-20）
+CreatedAt        DATETIME         -- 建立時間
+
+表 2: KeywordsLog（搜尋記錄表）
+----------------------------------
+LogID            INT              -- 唯一 ID
+KeywordID        INT              -- 外鍵到 KeywordsMaster
+LogDate          DATE             -- 記錄日期
+CrawlTime        DATETIME         -- 爬取時間
+SummaryText      NVARCHAR(MAX)    -- 搜尋結果摘要
+Status           NVARCHAR(50)     -- Success / Fail
+ErrorMessage     NVARCHAR(1000)   -- 錯誤訊息
+
+================================================================================
+💡 常用 SQL 查詢
+================================================================================
+
+# 查看今日所有關鍵字
+SELECT * FROM vw_TodayKeywords ORDER BY Region, TrendRank;
+
+# 查看今日搜尋記錄
+SELECT * FROM vw_TodaySearches ORDER BY CrawlTime DESC;
+
+# 查看特定地區 Top N
+EXEC sp_GetTopKeywordsByRegion @Region = 'US', @TopN = 20;
+EXEC sp_GetTopKeywordsByRegion @Region = 'TW', @TopN = 20;
+EXEC sp_GetTopKeywordsByRegion @Region = 'JP', @TopN = 20;
+
+# 查看統計
+EXEC sp_GetSearchStats;
+
+# 統計各地區關鍵字數量
+SELECT 
+    Region, 
+    COUNT(*) AS 關鍵字數量
+FROM KeywordsMaster
+WHERE CAST(CreatedAt AS DATE) = CAST(GETDATE() AS DATE)
+GROUP BY Region
+ORDER BY 關鍵字數量 DESC;
+
+# 查詢跨地區熱門關鍵字
+SELECT 
+    Keyword,
+    COUNT(DISTINCT Region) AS 出現地區數,
+    STRING_AGG(Region, ', ') AS 地區清單
+FROM KeywordsMaster
+WHERE CAST(CreatedAt AS DATE) = CAST(GETDATE() AS DATE)
+GROUP BY Keyword
+HAVING COUNT(DISTINCT Region) > 1
+ORDER BY 出現地區數 DESC;
+
+更多查詢請參考：automation/SQL_QUICK_START.md
+
+================================================================================
+📚 完整文件
+================================================================================
+
+FINAL_DELIVERY.md        - 最終交付總結
+SQL_QUICK_START.md       - SQL 快速入門（30+ 查詢範例）
+README_v2.md             - 主要使用說明
+TROUBLESHOOTING.md       - WebDriver 疑難排解
+database_setup_complete_v2.sql - 完整 SQL 建立腳本
+
+================================================================================
+✅ 驗證清單
+================================================================================
+
+安裝前確認:
+☐ SQL Server 已安裝並運行
+☐ Python 3.7+ 已安裝
+☐ Microsoft Edge 已安裝
+☐ msedgedriver.exe 已下載
+
+執行前確認:
+☐ 已執行 database_setup_complete_v2.sql
+☐ 已執行 pip install -r requirements.txt
+☐ msedgedriver 版本與 Edge 版本匹配
+☐ msedgedriver.exe 在 C:\自動化\
+
+================================================================================
+🎯 主要功能
+================================================================================
+
+✓ 從 6 個地區抓取 Google Trends（每地區 20 個關鍵字）
+  • 美國（US）、台灣（TW）、日本（JP）
+  • 英國（GB）、香港（HK）、澳洲（AU）
+
+✓ 抓取並儲存搜尋量資訊
+
+✓ 對前 20 個關鍵字進行 Bing 搜尋
+
+✓ 完整的資料庫記錄與查詢功能
+
+✓ 自動診斷 WebDriver 版本兼容性
+
+================================================================================
+📞 支援資源
+================================================================================
+
+WebDriver 下載:
+https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
+
+ODBC Driver 下載:
+https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
+
+如遇問題請參考:
+1. automation/v2_google_trends/TROUBLESHOOTING.md（詳細診斷）
+2. automation/v2_google_trends/README_v2.md（快速解決）
+3. automation/SQL_QUICK_START.md（SQL 相關）
+
+================================================================================
+版本: V2.1  |  更新日期: 2026-02-16  |  狀態: ✅ 可立即使用
+================================================================================
