@@ -9,11 +9,21 @@ SQL_DATABASE = 'MicrosoftRDB'  # 資料庫名稱
 DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # Edge WebDriver 的完整路徑
 
 # ==================== Google Trends 設定 ====================
-# 可以根據需要調整地區和排序方式
-# 地區代碼範例：US (美國), TW (台灣), JP (日本), GB (英國)
-TRENDS_URL = "https://trends.google.com.tw/trending?geo=US&status=active&sort=search-volume"
+# 多個地區的 Google Trends URL
+# 可以根據需要新增或移除地區
+TRENDS_URLS = [
+    "https://trends.google.com.tw/trending?geo=US",   # 美國
+    "https://trends.google.com.tw/trending?geo=TW",   # 台灣
+    "https://trends.google.com.tw/trending?geo=JP",   # 日本
+    "https://trends.google.com.tw/trending?geo=GB",   # 英國
+    "https://trends.google.com.tw/trending?geo=HK",   # 香港
+    "https://trends.google.com.tw/trending?geo=AU",   # 澳洲
+]
 
-# 要抓取的關鍵字數量（建議 5 個）
+# 每個地區抓取的關鍵字數量
+KEYWORDS_PER_REGION = 5
+
+# 從所有地區總共選取前 N 名進行搜尋
 TOP_N = 5
 
 # ==================== 搜尋間隔設定（秒） ====================

@@ -6,7 +6,10 @@
 
 此腳本執行以下三個主要步驟：
 
-1. **抓取 Google Trends 熱門關鍵字**：從 Google Trends 抓取當前熱門的關鍵字（一次性操作）
+1. **抓取 Google Trends 熱門關鍵字**：從多個地區的 Google Trends 抓取當前熱門的關鍵字
+   - 支援 6 個地區：美國、台灣、日本、英國、香港、澳洲
+   - 每個地區抓取 5 個關鍵字（可配置）
+   - 自動記錄關鍵字來源地區
 2. **Bing 搜尋自動化**：針對抓取到的前 5 個關鍵字，在 Bing 上進行搜尋並擷取摘要
    - 每個關鍵字之間間隔 30-90 秒
    - 完成所有搜尋後休息 2-5 分鐘
@@ -104,13 +107,21 @@ DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # WebDriver 路徑
 # 1. Windows 系統區域設定支援中文
 # 2. Python 執行環境的編碼設定正確
 # 3. 如遇到路徑問題，可考慮改用英文路徑如 C:\automation\
-```
-DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # WebDriver 路徑
 
-# Google Trends URL（可改地區或排序）
-TRENDS_URL = "https://trends.google.com.tw/trending?geo=US&status=active&sort=search-volume"
+# Google Trends URL（多個地區）
+TRENDS_URLS = [
+    "https://trends.google.com.tw/trending?geo=US",   # 美國
+    "https://trends.google.com.tw/trending?geo=TW",   # 台灣
+    "https://trends.google.com.tw/trending?geo=JP",   # 日本
+    "https://trends.google.com.tw/trending?geo=GB",   # 英國
+    "https://trends.google.com.tw/trending?geo=HK",   # 香港
+    "https://trends.google.com.tw/trending?geo=AU",   # 澳洲
+]
 
-# 前 N 名關鍵字要做額外搜尋
+# 每個地區抓取的關鍵字數量
+KEYWORDS_PER_REGION = 5
+
+# 從所有地區總共選取前 N 名進行搜尋
 TOP_N = 5
 
 # 前五關鍵字搜尋間隔（秒）

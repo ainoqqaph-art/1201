@@ -28,11 +28,20 @@ SQL_SERVER = 'localhost'
 SQL_DATABASE = 'MicrosoftRDB'
 DRIVER_PATH = r"C:\自動化\msedgedriver.exe"
 
-# Google Trends URL（可改地區或排序）
-# 使用 Daily Search Trends API endpoint，較穩定
-TRENDS_URL = "https://trends.google.com/trends/trendingsearches/daily?geo=US"
+# Google Trends URL（多個地區）
+TRENDS_URLS = [
+    "https://trends.google.com.tw/trending?geo=US",   # 美國
+    "https://trends.google.com.tw/trending?geo=TW",   # 台灣
+    "https://trends.google.com.tw/trending?geo=JP",   # 日本
+    "https://trends.google.com.tw/trending?geo=GB",   # 英國
+    "https://trends.google.com.tw/trending?geo=HK",   # 香港
+    "https://trends.google.com.tw/trending?geo=AU",   # 澳洲
+]
 
-# 前 N 名關鍵字要做額外搜尋
+# 每個地區抓取的關鍵字數量
+KEYWORDS_PER_REGION = 5
+
+# 前 N 名關鍵字要做額外搜尋（從所有地區總共選取）
 TOP_N = 5
 
 # 前五關鍵字搜尋間隔（秒）
@@ -225,16 +234,42 @@ def create_edge_driver():
 
 def fetch_google_trends(driver):
     """
-    抓取 Google Trends 熱門關鍵字
-    返回: list of dict [{'keyword': str, 'rank': int}, ...]
+    抓取 Google Trends 熱門關鍵字（從多個地區）
+    返回: list of dict [{'keyword': str, 'rank': int, 'region': str}, ...]
+    """
+    all_keywords = []
+    
+    for region_url in TRENDS_URLS:
+        # 從 URL 提取地區代碼
+        region_code = region_url.split('geo=')[-1].split('&')[0] if 'geo=' in region_url else 'Unknown'
+        logger.info(f"正在抓取 {region_code} 地區的 Google Trends...")
+        
+        keywords = fetch_trends_from_url(driver, region_url, region_code)
+        all_keywords.extend(keywords)
+        
+        # 每個地區之間稍作休息
+        if region_url != TRENDS_URLS[-1]:  # 不是最後一個
+            time.sleep(2)
+    
+    logger.info(f"總共從 {len(TRENDS_URLS)} 個地區抓取到 {len(all_keywords)} 個關鍵字")
+    
+    # 如果需要限制總數，取前 TOP_N 個（如果設定了全局限制）
+    # 否則返回所有關鍵字
+    return all_keywords
+
+
+def fetch_trends_from_url(driver, url, region_code):
+    """
+    從特定 URL 抓取 Google Trends 關鍵字
+    返回: list of dict [{'keyword': str, 'rank': int, 'region': str}, ...]
     """
     keywords = []
     retries = 0
     
     while retries < MAX_RETRIES:
         try:
-            logger.info(f"正在抓取 Google Trends... (嘗試 {retries + 1}/{MAX_RETRIES})")
-            driver.get(TRENDS_URL)
+            logger.info(f"正在抓取 {region_code}... (嘗試 {retries + 1}/{MAX_RETRIES})")
+            driver.get(url)
             
             # 增加等待時間以確保頁面完全載入
             time.sleep(5)
@@ -246,81 +281,76 @@ def fetch_google_trends(driver):
             try:
                 wait = WebDriverWait(driver, 15)
                 # Google Trends Daily 使用 table 結構
-                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr")))
-                trend_items = driver.find_elements(By.CSS_SELECTOR, "tbody tr")
-                logger.info(f"策略 1 (table): 找到 {len(trend_items)} 個項目")
-            except Exception as e1:
-                logger.warning(f"策略 1 (table) 失敗: {e1}")
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr, div.feed-item")))
                 
-                # 策略 2: 嘗試使用 feed-item
-                try:
+                # 先嘗試 table
+                trend_items = driver.find_elements(By.CSS_SELECTOR, "tbody tr")
+                if trend_items:
+                    logger.info(f"策略 1 (table): 找到 {len(trend_items)} 個項目")
+                else:
+                    # 嘗試 feed-item
                     trend_items = driver.find_elements(By.CSS_SELECTOR, "div.feed-item")
                     logger.info(f"策略 2 (feed-item): 找到 {len(trend_items)} 個項目")
-                except Exception as e2:
-                    logger.warning(f"策略 2 (feed-item) 失敗: {e2}")
                     
-                    # 策略 3: 嘗試使用更通用的選擇器
+            except Exception as e1:
+                logger.warning(f"策略 1-2 失敗: {e1}")
+                
+                # 策略 3: 嘗試使用更通用的選擇器
+                try:
+                    trend_items = driver.find_elements(By.CSS_SELECTOR, "[class*='trending'], [class*='trend-item'], .trending-item")
+                    logger.info(f"策略 3 (通用): 找到 {len(trend_items)} 個項目")
+                except Exception as e2:
+                    logger.warning(f"策略 3 失敗: {e2}")
+                    
+                    # 策略 4: 儲存截圖並嘗試 JSON
                     try:
-                        trend_items = driver.find_elements(By.CSS_SELECTOR, "[class*='trending'], [class*='trend-item']")
-                        logger.info(f"策略 3 (通用): 找到 {len(trend_items)} 個項目")
-                    except Exception as e3:
-                        logger.warning(f"策略 3 (通用) 失敗: {e3}")
+                        screenshot_path = f"debug_trends_{region_code}_{retries + 1}.png"
+                        driver.save_screenshot(screenshot_path)
+                        logger.info(f"已儲存截圖: {screenshot_path}")
                         
-                        # 策略 4: 使用 XPath 查找任何包含關鍵字的元素
-                        try:
-                            # 儲存截圖以供調試
-                            screenshot_path = f"debug_trends_{retries + 1}.png"
-                            driver.save_screenshot(screenshot_path)
-                            logger.info(f"已儲存截圖: {screenshot_path}")
-                            
-                            # 嘗試從頁面原始碼提取
-                            page_source = driver.page_source
-                            logger.debug(f"頁面長度: {len(page_source)} 字元")
-                            
-                            # 如果是 JSON API endpoint
-                            if "application/json" in driver.page_source or page_source.strip().startswith('{'):
-                                import json
-                                # 嘗試解析 JSON
-                                try:
-                                    # 找到 pre 標籤內的 JSON
-                                    pre_element = driver.find_element(By.TAG_NAME, "pre")
-                                    json_data = json.loads(pre_element.text)
-                                    logger.info("成功解析 JSON 資料")
-                                    
-                                    # 從 JSON 提取關鍵字
-                                    if isinstance(json_data, dict) and 'default' in json_data:
-                                        trending_searches = json_data.get('default', {}).get('trendingSearchesDays', [])
-                                        if trending_searches:
-                                            for search in trending_searches[0].get('trendingSearches', [])[:TOP_N]:
-                                                keyword = search.get('title', {}).get('query', '')
-                                                if keyword:
-                                                    keywords.append({'keyword': keyword, 'rank': len(keywords) + 1})
-                                                    logger.info(f"發現關鍵字 #{len(keywords)}: {keyword}")
-                                except json.JSONDecodeError as je:
-                                    logger.error(f"JSON 解析失敗: {je}")
-                                except Exception as json_err:
-                                    logger.error(f"JSON 處理失敗: {json_err}")
-                            
-                        except Exception as e4:
-                            logger.error(f"策略 4 (XPath/JSON) 失敗: {e4}")
+                        page_source = driver.page_source
+                        logger.debug(f"頁面長度: {len(page_source)} 字元")
+                        
+                        # 如果是 JSON API endpoint
+                        if "application/json" in page_source or page_source.strip().startswith('{'):
+                            try:
+                                pre_element = driver.find_element(By.TAG_NAME, "pre")
+                                json_data = json.loads(pre_element.text)
+                                logger.info("成功解析 JSON 資料")
+                                
+                                if isinstance(json_data, dict) and 'default' in json_data:
+                                    trending_searches = json_data.get('default', {}).get('trendingSearchesDays', [])
+                                    if trending_searches:
+                                        for search in trending_searches[0].get('trendingSearches', [])[:KEYWORDS_PER_REGION]:
+                                            keyword = search.get('title', {}).get('query', '')
+                                            if keyword:
+                                                keywords.append({
+                                                    'keyword': keyword, 
+                                                    'rank': len(keywords) + 1,
+                                                    'region': region_code
+                                                })
+                                                logger.info(f"發現關鍵字 ({region_code}) #{len(keywords)}: {keyword}")
+                            except (json.JSONDecodeError, Exception) as json_err:
+                                logger.error(f"JSON 處理失敗: {json_err}")
+                    except Exception as e3:
+                        logger.error(f"策略 4 失敗: {e3}")
             
             # 如果已經從 JSON 獲取到關鍵字，直接返回
             if keywords:
-                logger.info(f"從 JSON 成功抓取 {len(keywords)} 個關鍵字")
+                logger.info(f"從 {region_code} 成功抓取 {len(keywords)} 個關鍵字")
                 return keywords
             
             # 否則從 HTML 元素抓取
             if not trend_items:
-                raise Exception("所有選擇器策略都失敗，無法找到趨勢項目")
+                raise Exception(f"所有選擇器策略都失敗，無法找到 {region_code} 的趨勢項目")
             
             # 從找到的元素中提取關鍵字
-            for idx, item in enumerate(trend_items[:TOP_N], 1):
+            for idx, item in enumerate(trend_items[:KEYWORDS_PER_REGION], 1):
                 try:
-                    # 嘗試多種可能的 selector
                     keyword_element = None
                     keyword = None
                     
-                    # 針對 table 結構的選擇器
+                    # 針對不同結構的選擇器
                     selectors = [
                         "td a",  # table cell with link
                         "a",     # any link
@@ -329,6 +359,8 @@ def fetch_google_trends(driver):
                         "a.title",
                         "span.title",
                         "td",    # plain table cell
+                        ".description-text",
+                        ".title-text",
                     ]
                     
                     for selector in selectors:
@@ -343,30 +375,34 @@ def fetch_google_trends(driver):
                     # 如果還是沒找到，嘗試直接取元素文字
                     if not keyword:
                         keyword = item.text.strip()
-                        # 取第一行作為關鍵字（通常是標題）
+                        # 取第一行作為關鍵字
                         if '\n' in keyword:
                             keyword = keyword.split('\n')[0].strip()
                     
-                    if keyword:
-                        keywords.append({'keyword': keyword, 'rank': idx})
-                        logger.info(f"發現關鍵字 #{idx}: {keyword}")
+                    if keyword and len(keyword) > 0:
+                        keywords.append({
+                            'keyword': keyword, 
+                            'rank': idx,
+                            'region': region_code
+                        })
+                        logger.info(f"發現關鍵字 ({region_code}) #{idx}: {keyword}")
                 except Exception as e:
                     logger.warning(f"抓取第 {idx} 個關鍵字失敗: {e}")
                     continue
             
             if keywords:
-                logger.info(f"成功抓取 {len(keywords)} 個關鍵字")
+                logger.info(f"從 {region_code} 成功抓取 {len(keywords)} 個關鍵字")
                 return keywords
             else:
-                raise Exception("未能抓取到任何關鍵字")
+                raise Exception(f"未能從 {region_code} 抓取到任何關鍵字")
                 
         except Exception as e:
             retries += 1
-            logger.error(f"抓取 Google Trends 失敗: {e}")
+            logger.error(f"抓取 {region_code} Google Trends 失敗: {e}")
             
             # 儲存錯誤時的截圖
             try:
-                screenshot_path = f"error_trends_{retries}.png"
+                screenshot_path = f"error_trends_{region_code}_{retries}.png"
                 driver.save_screenshot(screenshot_path)
                 logger.info(f"錯誤截圖已儲存: {screenshot_path}")
             except:
@@ -377,16 +413,9 @@ def fetch_google_trends(driver):
                 logger.info(f"等待 {backoff} 秒後重試...")
                 time.sleep(backoff)
             else:
-                logger.error("已達到最大重試次數，放棄抓取")
-                # 最後嘗試：返回一些預設關鍵字以便程式繼續運行
-                logger.warning("使用備用關鍵字列表")
-                return [
-                    {'keyword': 'Microsoft Rewards', 'rank': 1},
-                    {'keyword': 'Bing Search', 'rank': 2},
-                    {'keyword': 'Technology News', 'rank': 3},
-                    {'keyword': 'Weather', 'rank': 4},
-                    {'keyword': 'Sports', 'rank': 5}
-                ]
+                logger.error(f"已達到最大重試次數，{region_code} 抓取失敗")
+                # 為這個地區返回空列表，繼續其他地區
+                return []
     
     return keywords
 
@@ -555,29 +584,33 @@ def main():
             if not args.dry_run and conn:
                 for kw in keywords:
                     try:
-                        # 建立或取得 KeywordID，設定 Category 為 'Google Trends'
+                        # 建立或取得 KeywordID，使用地區作為 Category
+                        region = kw.get('region', 'Unknown')
                         keyword_id = get_or_create_keyword_id(
                             conn, 
                             kw['keyword'], 
-                            category='Google Trends',
+                            category=f'Google Trends ({region})',
                             search_intent='Trending'
                         )
-                        # 儲存一筆初始記錄到 KeywordsLog (尚未搜尋)
-                        # 這可以選擇性做，或在後續搜尋時才記錄
                     except Exception as e:
                         logger.error(f"處理關鍵字 '{kw['keyword']}' 時發生錯誤: {e}")
         else:
             logger.info("跳過 Google Trends 抓取")
         
-        # Step 2: 在 Bing 搜尋前五個關鍵字
+        # Step 2: 在 Bing 搜尋前 TOP_N 個關鍵字
         if not args.skip_search and keywords:
-            logger.info(f"\n=== 步驟 2: 在 Bing 搜尋前 {len(keywords)} 個關鍵字 ===")
+            # 選擇前 TOP_N 個關鍵字進行搜尋
+            keywords_to_search = keywords[:TOP_N]
+            logger.info(f"\n=== 步驟 2: 在 Bing 搜尋前 {len(keywords_to_search)} 個關鍵字 ===")
             
-            for idx, kw_data in enumerate(keywords, 1):
+            for idx, kw_data in enumerate(keywords_to_search, 1):
                 keyword = kw_data['keyword']
+                region = kw_data.get('region', 'Unknown')
                 summary_text = None
                 status = 'Success'
                 error_message = None
+                
+                logger.info(f"[{idx}/{len(keywords_to_search)}] 搜尋關鍵字: {keyword} (來自 {region})")
                 
                 try:
                     # 搜尋關鍵字並取得摘要
@@ -588,7 +621,7 @@ def main():
                         keyword_id = get_or_create_keyword_id(
                             conn, 
                             keyword, 
-                            category='Google Trends',
+                            category=f'Google Trends ({region})',
                             search_intent='Trending'
                         )
                         save_keyword_log(
@@ -611,7 +644,7 @@ def main():
                             keyword_id = get_or_create_keyword_id(
                                 conn, 
                                 keyword, 
-                                category='Google Trends',
+                                category=f'Google Trends ({region})',
                                 search_intent='Trending'
                             )
                             save_keyword_log(
@@ -626,7 +659,7 @@ def main():
                             logger.error(f"記錄失敗狀態時發生錯誤: {db_error}")
                 
                 # 每個關鍵字後的休息時間
-                if idx < len(keywords):
+                if idx < len(keywords_to_search):
                     delay = random.randint(PER_KEYWORD_MIN, PER_KEYWORD_MAX)
                     logger.info(f"等待 {delay} 秒後搜尋下一個關鍵字...")
                     time.sleep(delay)
