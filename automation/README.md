@@ -100,6 +100,13 @@ SQL_SERVER = 'localhost'  # SQL Server 位址
 SQL_DATABASE = 'MicrosoftRDB'  # 資料庫名稱
 DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # WebDriver 路徑
 
+# 注意：路徑使用中文字符可能在某些系統上需要確保：
+# 1. Windows 系統區域設定支援中文
+# 2. Python 執行環境的編碼設定正確
+# 3. 如遇到路徑問題，可考慮改用英文路徑如 C:\automation\
+```
+DRIVER_PATH = r"C:\自動化\msedgedriver.exe"  # WebDriver 路徑
+
 # Google Trends URL（可改地區或排序）
 TRENDS_URL = "https://trends.google.com.tw/trending?geo=US&status=active&sort=search-volume"
 

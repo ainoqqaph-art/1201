@@ -34,6 +34,8 @@ if %errorlevel% neq 0 (
     pip install -r requirements.txt
     if %errorlevel% neq 0 (
         echo [錯誤] 套件安裝失敗
+        echo 請手動執行: pip install -r requirements.txt
+        echo 並查看詳細錯誤訊息
         pause
         exit /b 1
     )

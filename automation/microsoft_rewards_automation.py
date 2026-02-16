@@ -563,8 +563,8 @@ def main():
                     status='Fail',
                     error_message=str(e)
                 )
-            except:
-                pass
+            except Exception as db_err:
+                logger.error(f"記錄失敗狀態時發生錯誤: {db_err}")
         
     finally:
         # 清理資源
