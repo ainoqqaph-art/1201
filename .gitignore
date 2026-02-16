@@ -22,3 +22,26 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python automation logs
+automation/*.log
+*.log
+
+# Debug screenshots
+automation/*.png
+debug_*.png
+error_*.png
